@@ -636,7 +636,7 @@ document.getElementById('import-file').onchange = (e)=>{
       if(data && Array.isArray(data.habits)){
         state = data; save(); render();
         alert('Import complete.');
-      } else { alert('That file doesn\\'t look like a valid backup.'); }
+      } else { alert('That file does not look like a valid backup.'); }
     }catch(err){ alert('Could not read that file.'); }
   };
   reader.readAsText(file);
