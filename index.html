@@ -79,7 +79,7 @@
   .habit{touch-action:pan-y;-webkit-touch-callout:none;}
   .habit.dragging{position:fixed;z-index:200;box-shadow:0 24px 48px -12px rgba(0,0,0,.55);transform:scale(1.03) rotate(-1deg);transition:none;margin:0;}
   .drag-placeholder{border:2px dashed var(--border);border-radius:var(--radius);margin-bottom:12px;background:transparent;}
-  .drag-handle{color:var(--sub);font-size:14px;cursor:grab;letter-spacing:-1px;opacity:.55;}
+  .drag-handle{color:var(--sub);font-size:18px;letter-spacing:-2px;opacity:.6;cursor:grab;touch-action:none;padding:6px 8px 6px 0;margin:-6px 0 -6px -4px;-webkit-touch-callout:none;}
   @keyframes cardIn{to{opacity:1;transform:translateY(0) scale(1);}}
 
   .habit-top{display:flex;align-items:center;justify-content:space-between;gap:10px;}
@@ -667,20 +667,19 @@ document.getElementById('reminder-time').value = settings.reminderTime;
 
 // ---------- long-press drag to reorder ----------
 const habitListEl = document.getElementById('habit-list');
-const LONG_PRESS_MS = 420;
-const MOVE_CANCEL_PX = 8;
-function cancelThreshold(pointerType){ return pointerType==='touch' ? 16 : MOVE_CANCEL_PX; }
+const LONG_PRESS_MS = 350;
 
 habitListEl.addEventListener('pointerdown', onCardPointerDown);
 
 function onCardPointerDown(e){
-  const card = e.target.closest('.habit');
+  const handle = e.target.closest('.drag-handle');
+  if(!handle) return; // only the ⠿ handle can start a drag
+  const card = handle.closest('.habit');
   if(!card) return;
-  if(e.target.closest('button')) return;
   if(e.pointerType==='mouse' && e.button!==0) return;
 
+  e.preventDefault();
   const startX = e.clientX, startY = e.clientY;
-  const threshold = cancelThreshold(e.pointerType);
   let cancelled = false;
 
   const timer = setTimeout(()=>{
@@ -690,24 +689,17 @@ function onCardPointerDown(e){
     }
   }, LONG_PRESS_MS);
 
-  function onEarlyMove(ev){
-    if(Math.abs(ev.clientX-startX) > threshold || Math.abs(ev.clientY-startY) > threshold){
-      cancelled = true;
-      clearTimeout(timer);
-      cleanup();
-    }
-  }
   function onEarlyUp(){
     cancelled = true;
     clearTimeout(timer);
     cleanup();
   }
   function cleanup(){
-    document.removeEventListener('pointermove', onEarlyMove);
     document.removeEventListener('pointerup', onEarlyUp);
+    document.removeEventListener('pointercancel', onEarlyUp);
   }
-  document.addEventListener('pointermove', onEarlyMove);
   document.addEventListener('pointerup', onEarlyUp);
+  document.addEventListener('pointercancel', onEarlyUp);
 }
 
 function beginDrag(card, pointerId, startX, startY){
