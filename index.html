@@ -67,6 +67,16 @@
   .range-seg button{flex:1;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:7px;font-size:12px;font-weight:600;color:var(--sub);transition:all .2s;}
   .range-seg button.active{background:var(--ember);color:#2a0f04;border-color:var(--ember);}
 
+  .search-input{width:100%;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:11px 14px;color:var(--text);font-size:14px;margin-bottom:14px;transition:border-color .2s;}
+  .search-input::placeholder{color:var(--sub);opacity:.6;}
+  .search-input:focus{outline:none;border-color:var(--ember);}
+
+  .cat-header{display:flex;align-items:center;gap:8px;padding:10px 4px;cursor:pointer;user-select:none;}
+  .cat-chevron{font-size:11px;color:var(--sub);transition:transform .2s;display:inline-block;}
+  .cat-chevron.closed{transform:rotate(-90deg);}
+  .cat-name{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--sub);}
+  .cat-count{font-size:11px;color:var(--sub);margin-left:auto;background:var(--card2);padding:2px 8px;border-radius:999px;}
+
   .habit{
     background:linear-gradient(160deg, var(--card), var(--card2));
     border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;margin-bottom:12px;
@@ -110,8 +120,9 @@
   .confetti span{position:absolute;top:50%;left:50%;width:6px;height:6px;border-radius:2px;opacity:0;}
 
   .grid-heat{display:grid;gap:4px;margin-top:16px;}
-  .cell{aspect-ratio:1;border-radius:4px;background:var(--card2);transition:background .2s, transform .2s;}
+  .cell{aspect-ratio:1;border-radius:4px;background:var(--card2);transition:background .2s, transform .2s;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;}
   .cell.on{background:linear-gradient(135deg,var(--ember),var(--ember2));}
+  .cell.missed{background:rgba(255,92,92,.14);color:var(--danger);border:1px solid rgba(255,92,92,.3);}
   .habit:hover .cell.on{transform:scale(1.1);}
 
   .habit-stats{display:flex;gap:18px;margin-top:14px;font-size:12.5px;color:var(--sub);}
@@ -138,7 +149,8 @@
     opacity:0;transform:translateY(8px);animation:cardIn .4s ease forwards;}
   .stat-card .num{font-size:26px;font-weight:700;font-family:'Space Grotesk',sans-serif;background:linear-gradient(90deg,var(--ember),var(--ember2));-webkit-background-clip:text;background-clip:text;color:transparent;}
   .stat-card .lbl{font-size:12px;color:var(--sub);margin-top:4px;}
-  canvas{max-height:220px;}
+  canvas#barChart{max-height:220px;}
+  .chart-scroll{max-height:340px;overflow-y:auto;}
   .chart-wrap{background:linear-gradient(160deg,var(--card),var(--card2));border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:14px;
     opacity:0;transform:translateY(8px);animation:cardIn .45s ease forwards;}
   .chart-wrap h3{margin:0 0 14px;font-size:14px;color:var(--sub);font-weight:600;font-family:'Space Grotesk',sans-serif;}
@@ -204,6 +216,7 @@
       <input id="new-habit" placeholder="e.g. 10 push ups" maxlength="40">
       <button id="add-btn">Add</button>
     </div>
+    <input id="search-input" class="search-input" placeholder="Search habits...">
     <div id="habit-list"></div>
   </div>
 
@@ -215,7 +228,7 @@
     </div>
     <div class="stat-cards" id="stat-cards"></div>
     <div class="chart-wrap"><h3 id="chart1-title">Completions</h3><canvas id="barChart"></canvas></div>
-    <div class="chart-wrap"><h3>Current streaks</h3><canvas id="streakChart"></canvas></div>
+    <div class="chart-wrap"><h3>Current streaks</h3><div class="chart-scroll"><canvas id="streakChart"></canvas></div></div>
   </div>
 </div>
 
@@ -232,6 +245,7 @@
     <div class="field"><label>Emoji</label><input type="text" id="edit-emoji" maxlength="4" placeholder="💪"><div class="emoji-grid" id="edit-emoji-grid"></div></div>
     <div class="field"><label>Color</label><div class="swatches" id="edit-swatches"></div></div>
     <div class="field"><label>Times per day to complete</label><input type="number" id="edit-target" min="1" max="20" value="1"></div>
+    <div class="field"><label>Category</label><input type="text" id="edit-category" list="category-list" placeholder="General" maxlength="24"><datalist id="category-list"></datalist></div>
     <div class="sheet-btns">
       <button id="habit-cancel">Cancel</button>
       <button class="primary" id="habit-save">Save</button>
@@ -279,9 +293,9 @@ const SWATCHES = ['#ff6a3d','#2dd4bf','#ffb347','#8b7cf6','#ff5c8a','#4ade80','#
 function load(){
   try{
     const raw = JSON.parse(localStorage.getItem(STORE_KEY));
-    if(raw) return raw;
+    if(raw){ raw.habits.forEach(h=>{ if(!h.category) h.category='General'; }); return raw; }
     const old = JSON.parse(localStorage.getItem('habit_tracker_v1'));
-    if(old) return {habits: old.habits.map(h=>({...h, emoji:'✅', color:'#ff6a3d', target:1}))};
+    if(old) return {habits: old.habits.map(h=>({...h, emoji:'✅', color:'#ff6a3d', target:1, category:'General'}))};
   }catch(e){}
   return {habits:[]};
 }
@@ -354,7 +368,7 @@ function computeBest(habit){
 // ---------- CRUD ----------
 function addHabit(name){
   if(!name.trim()) return;
-  state.habits.push({id:Date.now().toString(36), name:name.trim(), emoji:'✅', color:'#ff6a3d', target:1, days:{}, created:todayStr()});
+  state.habits.push({id:Date.now().toString(36), name:name.trim(), emoji:'✅', color:'#ff6a3d', target:1, category:'General', days:{}, created:todayStr()});
   save(); render();
 }
 function toggleToday(id, btnEl){
@@ -364,12 +378,11 @@ function toggleToday(id, btnEl){
   const target = h.target||1;
   const turningOn = cur < target;
   h.days[k] = turningOn ? Math.min(cur+1, target) : 0;
-  if(!turningOn) h.days[k] = 0;
   save();
   updateRing();
   if(turningOn){
     playChime();
-    btnEl.classList.add(isDoneOn(h,k) ? 'done' : '');
+    if(isDoneOn(h,k)) btnEl.classList.add('done');
     burstConfetti(btnEl);
     setTimeout(render, 550);
   } else {
@@ -419,41 +432,92 @@ function updateRing(){
 // ---------- render today ----------
 function escapeHtml(s){ return s.replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 
+let collapsedCats = new Set(JSON.parse(localStorage.getItem('habit_collapsed_cats')||'[]'));
+function saveCollapsed(){ localStorage.setItem('habit_collapsed_cats', JSON.stringify([...collapsedCats])); }
+let searchQuery = '';
+
 function renderToday(){
   const list = document.getElementById('habit-list');
   if(state.habits.length===0){
     list.innerHTML = '<div class="empty"><div class="big">+</div>No habits yet. Add one above — start small.</div>';
     return;
   }
-  list.innerHTML = state.habits.map((h,idx)=>{
-    const streak = computeStreak(h);
-    const total = Object.keys(h.days).filter(k=>isDoneOn(h,k)).length;
-    const k = todayStr();
-    const cur = countFor(h,k);
-    const target = h.target||1;
-    const doneToday = isDoneOn(h,k);
-    let cells = '';
-    for(let i=27;i>=0;i--){
-      const on = isDoneOn(h, todayStr(-i));
-      cells += `<div class="cell ${on?'on':''}" style="${on?`background:linear-gradient(135deg,${h.color},${h.color}aa)`:''}"></div>`;
-    }
-    const btnLabel = target>1 ? (doneToday ? '✓' : `${cur}/${target}`) : (doneToday ? '✓' : '');
-    return `<div class="habit ${streak>=3?'streaking':''}" data-id="${h.id}" style="animation-delay:${idx*0.05}s">
-      <div class="habit-top">
-        <div class="habit-name"><span class="drag-handle">⠿</span><span class="habit-emoji">${h.emoji||'✅'}</span>${escapeHtml(h.name)} ${streak>=3?'<span class="flame lit">🔥</span>':''}</div>
-        <div class="habit-actions">
-          <button class="mini-btn" onclick="openEdit('${h.id}')" aria-label="Edit">✎</button>
-          <button class="check-btn ${doneToday?'done':''}" style="${doneToday?`background:linear-gradient(135deg,${h.color},${h.color}cc);border-color:${h.color};box-shadow:0 0 20px ${h.color}55`:''}" onclick="toggleToday('${h.id}', this)">${btnLabel}</button>
-        </div>
-      </div>
-      <div class="habit-meta">${streak>0? '<b>'+streak+'</b> day streak' : 'no streak yet'}</div>
-      <div class="grid-heat" style="grid-template-columns:repeat(14,1fr);">${cells}</div>
-      <div class="habit-foot">
-        <div class="habit-stats"><span>Best: <b>${computeBest(h)}</b></span><span>Total: <b>${total}</b></span></div>
-        <button class="del-btn" onclick="if(confirm('Delete this habit?')) deleteHabit('${h.id}')">Delete</button>
-      </div>
+
+  // compute streak/best once per render pass — avoids recomputation for grouping + sorting
+  const cache = new Map();
+  state.habits.forEach(h=> cache.set(h.id, {streak: computeStreak(h), best: computeBest(h)}));
+
+  const q = searchQuery.trim().toLowerCase();
+  const visible = q ? state.habits.filter(h=>h.name.toLowerCase().includes(q)) : state.habits;
+
+  if(visible.length===0){
+    list.innerHTML = '<div class="empty">No habits match "'+escapeHtml(searchQuery)+'".</div>';
+    return;
+  }
+
+  // group by category, preserving first-seen order
+  const groups = new Map();
+  visible.forEach(h=>{
+    const cat = h.category || 'General';
+    if(!groups.has(cat)) groups.set(cat, []);
+    groups.get(cat).push(h);
+  });
+
+  let html = '';
+  let idx = 0;
+  for(const [cat, habits] of groups){
+    const collapsed = collapsedCats.has(cat);
+    const doneCount = habits.filter(h=>isDoneOn(h, todayStr())).length;
+    html += `<div class="cat-header" data-cat="${escapeHtml(cat)}">
+      <span class="cat-chevron ${collapsed?'closed':''}">▾</span>
+      <span class="cat-name">${escapeHtml(cat)}</span>
+      <span class="cat-count">${doneCount}/${habits.length}</span>
     </div>`;
-  }).join('');
+    if(collapsed){ idx += habits.length; continue; }
+
+    html += habits.map(h=>{
+      const {streak, best} = cache.get(h.id);
+      const total = Object.keys(h.days).filter(k=>isDoneOn(h,k)).length;
+      const k = todayStr();
+      const cur = countFor(h,k);
+      const target = h.target||1;
+      const doneToday = isDoneOn(h,k);
+      let cells = '';
+      for(let i=27;i>=0;i--){
+        const dateKey = todayStr(-i);
+        const on = isDoneOn(h, dateKey);
+        const missed = !on && i>0 && dateKey >= h.created;
+        cells += `<div class="cell ${on?'on':''} ${missed?'missed':''}" style="${on?`background:linear-gradient(135deg,${h.color},${h.color}aa)`:''}">${missed?'✗':''}</div>`;
+      }
+      const btnLabel = target>1 ? (doneToday ? '✓' : `${cur}/${target}`) : (doneToday ? '✓' : '');
+      idx++;
+      return `<div class="habit ${streak>=3?'streaking':''}" data-id="${h.id}" style="animation-delay:${Math.min(idx,10)*0.04}s">
+        <div class="habit-top">
+          <div class="habit-name"><span class="drag-handle">⠿</span><span class="habit-emoji">${h.emoji||'✅'}</span>${escapeHtml(h.name)} ${streak>=3?'<span class="flame lit">🔥</span>':''}</div>
+          <div class="habit-actions">
+            <button class="mini-btn" onclick="openEdit('${h.id}')" aria-label="Edit">✎</button>
+            <button class="check-btn ${doneToday?'done':''}" style="${doneToday?`background:linear-gradient(135deg,${h.color},${h.color}cc);border-color:${h.color};box-shadow:0 0 20px ${h.color}55`:''}" onclick="toggleToday('${h.id}', this)">${btnLabel}</button>
+          </div>
+        </div>
+        <div class="habit-meta">${streak>0? '<b>'+streak+'</b> day streak' : 'no streak yet'}</div>
+        <div class="grid-heat" style="grid-template-columns:repeat(14,1fr);">${cells}</div>
+        <div class="habit-foot">
+          <div class="habit-stats"><span>Best: <b>${best}</b></span><span>Total: <b>${total}</b></span></div>
+          <button class="del-btn" onclick="if(confirm('Delete this habit?')) deleteHabit('${h.id}')">Delete</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  list.innerHTML = html;
+
+  list.querySelectorAll('.cat-header').forEach(header=>{
+    header.onclick = ()=>{
+      const cat = header.dataset.cat;
+      if(collapsedCats.has(cat)) collapsedCats.delete(cat); else collapsedCats.add(cat);
+      saveCollapsed();
+      renderToday();
+    };
+  });
 }
 
 // ---------- edit sheet ----------
@@ -464,6 +528,9 @@ function openEdit(id){
   document.getElementById('edit-name').value = h.name;
   document.getElementById('edit-emoji').value = h.emoji||'✅';
   document.getElementById('edit-target').value = h.target||1;
+  document.getElementById('edit-category').value = h.category || 'General';
+  const cats = [...new Set(state.habits.map(x=>x.category||'General'))];
+  document.getElementById('category-list').innerHTML = cats.map(c=>`<option value="${escapeHtml(c)}">`).join('');
   renderEmojiGrid(h.emoji||'✅');
   renderSwatches(h.color);
   openSheet('habit-sheet');
@@ -497,6 +564,7 @@ document.getElementById('habit-save').onclick = ()=>{
   h.name = document.getElementById('edit-name').value.trim() || h.name;
   h.emoji = document.getElementById('edit-emoji').value.trim() || '✅';
   h.target = Math.max(1, parseInt(document.getElementById('edit-target').value)||1);
+  h.category = document.getElementById('edit-category').value.trim() || 'General';
   const sel = document.querySelector('#edit-swatches .swatch.sel');
   if(sel) h.color = sel.dataset.color;
   save(); render(); closeSheet('habit-sheet');
@@ -544,10 +612,12 @@ function renderStats(){
 
   const ctx2 = document.getElementById('streakChart');
   if(streakChart) streakChart.destroy();
+  const barHeight = 34;
+  ctx2.parentElement.style.height = Math.max(220, state.habits.length * barHeight) + 'px';
   streakChart = new Chart(ctx2, {
     type:'bar',
     data:{labels: state.habits.map(h=>h.name), datasets:[{data: state.habits.map(h=>computeStreak(h)), backgroundColor: state.habits.map(h=>h.color), borderRadius:5}]},
-    options:{indexAxis:'y', animation:{duration:700,easing:'easeOutQuart'}, plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true, ticks:{color:'#9b93a3', precision:0}, grid:{color:'#2b273155'}}, y:{ticks:{color:'#9b93a3'}, grid:{display:false}}}}
+    options:{indexAxis:'y', maintainAspectRatio:false, animation:{duration:700,easing:'easeOutQuart'}, plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true, ticks:{color:'#9b93a3', precision:0}, grid:{color:'#2b273155'}}, y:{ticks:{color:'#9b93a3'}, grid:{display:false}}}}
   });
 }
 document.querySelectorAll('.range-seg button').forEach(btn=>{
@@ -560,10 +630,16 @@ document.querySelectorAll('.range-seg button').forEach(btn=>{
 });
 
 // ---------- render all ----------
+let statsDirty = true;
 function render(){
   renderToday();
   updateRing();
-  renderStats();
+  if(document.getElementById('stats-view').style.display !== 'none'){
+    renderStats();
+    statsDirty = false;
+  } else {
+    statsDirty = true;
+  }
 }
 
 document.getElementById('add-btn').onclick = ()=>{
@@ -572,6 +648,11 @@ document.getElementById('add-btn').onclick = ()=>{
   inp.value='';
 };
 document.getElementById('new-habit').addEventListener('keydown', e=>{ if(e.key==='Enter'){ document.getElementById('add-btn').click(); }});
+
+document.getElementById('search-input').addEventListener('input', function(){
+  searchQuery = this.value;
+  renderToday();
+});
 
 // ---------- bottom nav ----------
 document.querySelectorAll('.nav-btn').forEach(btn=>{
@@ -582,7 +663,10 @@ document.querySelectorAll('.nav-btn').forEach(btn=>{
     const todayView = document.getElementById('today-view');
     const statsView = document.getElementById('stats-view');
     if(tab==='today'){ todayView.style.display=''; statsView.style.display='none'; todayView.classList.remove('view'); void todayView.offsetWidth; todayView.classList.add('view'); }
-    else { statsView.style.display=''; todayView.style.display='none'; statsView.classList.remove('view'); void statsView.offsetWidth; statsView.classList.add('view'); renderStats(); }
+    else {
+      statsView.style.display=''; todayView.style.display='none'; statsView.classList.remove('view'); void statsView.offsetWidth; statsView.classList.add('view');
+      if(statsDirty){ renderStats(); statsDirty = false; }
+    }
   };
 });
 
