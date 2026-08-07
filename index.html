@@ -76,6 +76,9 @@
   }
   .habit:hover{border-color:var(--ember-glow);transform:translateY(-2px);}
   .habit.streaking{box-shadow:0 0 0 1px var(--ember-glow), 0 10px 28px -14px var(--ember-glow);}
+  .habit.dragging{position:fixed;z-index:200;box-shadow:0 24px 48px -12px rgba(0,0,0,.55);transform:scale(1.03) rotate(-1deg);transition:none;margin:0;}
+  .drag-placeholder{border:2px dashed var(--border);border-radius:var(--radius);margin-bottom:12px;background:transparent;}
+  .drag-handle{color:var(--sub);font-size:14px;cursor:grab;letter-spacing:-1px;opacity:.55;}
   @keyframes cardIn{to{opacity:1;transform:translateY(0) scale(1);}}
 
   .habit-top{display:flex;align-items:center;justify-content:space-between;gap:10px;}
@@ -150,6 +153,10 @@
   .field input[type=text], .field input[type=number], .field input[type=time]{width:100%;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:11px 13px;color:var(--text);font-size:14px;}
   .field input:focus{outline:none;border-color:var(--ember);}
   .swatches{display:flex;gap:8px;flex-wrap:wrap;}
+  .emoji-grid{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;}
+  .emoji-opt{width:36px;height:36px;border-radius:10px;border:1px solid var(--border);background:var(--card2);font-size:18px;display:flex;align-items:center;justify-content:center;transition:transform .12s, border-color .2s;}
+  .emoji-opt:active{transform:scale(0.9);}
+  .emoji-opt.sel{border-color:var(--ember);background:var(--ember-glow);}
   .swatch{width:32px;height:32px;border-radius:50%;border:2px solid transparent;transition:transform .15s;}
   .swatch.sel{border-color:var(--text);transform:scale(1.1);}
   .sheet-btns{display:flex;gap:10px;margin-top:18px;}
@@ -221,7 +228,7 @@
   <div class="sheet">
     <h2 id="habit-sheet-title">Edit habit</h2>
     <div class="field"><label>Name</label><input type="text" id="edit-name" maxlength="40"></div>
-    <div class="field"><label>Emoji</label><input type="text" id="edit-emoji" maxlength="4" placeholder="💪"></div>
+    <div class="field"><label>Emoji</label><input type="text" id="edit-emoji" maxlength="4" placeholder="💪"><div class="emoji-grid" id="edit-emoji-grid"></div></div>
     <div class="field"><label>Color</label><div class="swatches" id="edit-swatches"></div></div>
     <div class="field"><label>Times per day to complete</label><input type="number" id="edit-target" min="1" max="20" value="1"></div>
     <div class="sheet-btns">
@@ -372,13 +379,6 @@ function deleteHabit(id){
   state.habits = state.habits.filter(h=>h.id!==id);
   save(); render();
 }
-function moveHabit(id, dir){
-  const idx = state.habits.findIndex(h=>h.id===id);
-  const newIdx = idx+dir;
-  if(newIdx<0 || newIdx>=state.habits.length) return;
-  [state.habits[idx], state.habits[newIdx]] = [state.habits[newIdx], state.habits[idx]];
-  save(); render();
-}
 
 // ---------- confetti ----------
 const CONFETTI_COLORS = ['#ff6a3d','#ffb347','#2dd4bf','#ffd08a'];
@@ -437,9 +437,9 @@ function renderToday(){
       cells += `<div class="cell ${on?'on':''}" style="${on?`background:linear-gradient(135deg,${h.color},${h.color}aa)`:''}"></div>`;
     }
     const btnLabel = target>1 ? (doneToday ? '✓' : `${cur}/${target}`) : (doneToday ? '✓' : '');
-    return `<div class="habit ${streak>=3?'streaking':''}" style="animation-delay:${idx*0.05}s">
+    return `<div class="habit ${streak>=3?'streaking':''}" data-id="${h.id}" style="animation-delay:${idx*0.05}s">
       <div class="habit-top">
-        <div class="habit-name"><span class="habit-emoji">${h.emoji||'✅'}</span>${escapeHtml(h.name)} ${streak>=3?'<span class="flame lit">🔥</span>':''}</div>
+        <div class="habit-name"><span class="drag-handle">⠿</span><span class="habit-emoji">${h.emoji||'✅'}</span>${escapeHtml(h.name)} ${streak>=3?'<span class="flame lit">🔥</span>':''}</div>
         <div class="habit-actions">
           <button class="mini-btn" onclick="openEdit('${h.id}')" aria-label="Edit">✎</button>
           <button class="check-btn ${doneToday?'done':''}" style="${doneToday?`background:linear-gradient(135deg,${h.color},${h.color}cc);border-color:${h.color};box-shadow:0 0 20px ${h.color}55`:''}" onclick="toggleToday('${h.id}', this)">${btnLabel}</button>
@@ -449,26 +449,40 @@ function renderToday(){
       <div class="grid-heat" style="grid-template-columns:repeat(14,1fr);">${cells}</div>
       <div class="habit-foot">
         <div class="habit-stats"><span>Best: <b>${computeBest(h)}</b></span><span>Total: <b>${total}</b></span></div>
-        <div style="display:flex;gap:4px;">
-          <button class="mini-btn" onclick="moveHabit('${h.id}',-1)" aria-label="Move up">↑</button>
-          <button class="mini-btn" onclick="moveHabit('${h.id}',1)" aria-label="Move down">↓</button>
-          <button class="del-btn" style="margin-left:6px" onclick="if(confirm('Delete this habit?')) deleteHabit('${h.id}')">Delete</button>
-        </div>
+        <button class="del-btn" onclick="if(confirm('Delete this habit?')) deleteHabit('${h.id}')">Delete</button>
       </div>
     </div>`;
   }).join('');
 }
 
 // ---------- edit sheet ----------
+const EMOJI_PRESETS = ['✅','💪','🏋️','🏃','🚶','🧘','😴','⏰','💧','🥗','📖','✍️','💊','🧹','🚴','🎯','🙏','🧠','🎸','🚭'];
 function openEdit(id){
   editingId = id;
   const h = state.habits.find(h=>h.id===id);
   document.getElementById('edit-name').value = h.name;
   document.getElementById('edit-emoji').value = h.emoji||'✅';
   document.getElementById('edit-target').value = h.target||1;
+  renderEmojiGrid(h.emoji||'✅');
   renderSwatches(h.color);
   openSheet('habit-sheet');
 }
+function renderEmojiGrid(selected){
+  const grid = document.getElementById('edit-emoji-grid');
+  grid.innerHTML = EMOJI_PRESETS.map(em=>`<button type="button" class="emoji-opt ${em===selected?'sel':''}" data-emoji="${em}">${em}</button>`).join('');
+  grid.querySelectorAll('.emoji-opt').forEach(btn=>{
+    btn.onclick = ()=>{
+      grid.querySelectorAll('.emoji-opt').forEach(b=>b.classList.remove('sel'));
+      btn.classList.add('sel');
+      document.getElementById('edit-emoji').value = btn.dataset.emoji;
+    };
+  });
+}
+document.getElementById('edit-emoji').addEventListener('input', function(){
+  document.querySelectorAll('#edit-emoji-grid .emoji-opt').forEach(b=>{
+    b.classList.toggle('sel', b.dataset.emoji === this.value.trim());
+  });
+});
 function renderSwatches(selected){
   const wrap = document.getElementById('edit-swatches');
   wrap.innerHTML = SWATCHES.map(c=>`<button type="button" class="swatch ${c===selected?'sel':''}" style="background:${c}" data-color="${c}"></button>`).join('');
@@ -650,11 +664,108 @@ document.getElementById('reminder-toggle').classList.toggle('on', settings.remin
 document.getElementById('reminder-time-row').style.display = settings.reminder ? '' : 'none';
 document.getElementById('reminder-time').value = settings.reminderTime;
 
-// ---------- service worker ----------
-if('serviceWorker' in navigator){
-  window.addEventListener('load', ()=>{
-    navigator.serviceWorker.register('sw.js').catch(()=>{});
-  });
+// ---------- long-press drag to reorder ----------
+const habitListEl = document.getElementById('habit-list');
+const LONG_PRESS_MS = 420;
+const MOVE_CANCEL_PX = 8;
+
+habitListEl.addEventListener('pointerdown', onCardPointerDown);
+
+function onCardPointerDown(e){
+  const card = e.target.closest('.habit');
+  if(!card) return;
+  if(e.target.closest('button')) return;
+  if(e.pointerType==='mouse' && e.button!==0) return;
+
+  const startX = e.clientX, startY = e.clientY;
+  let cancelled = false;
+
+  const timer = setTimeout(()=>{
+    if(!cancelled) beginDrag(card, e.pointerId, startX, startY);
+  }, LONG_PRESS_MS);
+
+  function onEarlyMove(ev){
+    if(Math.abs(ev.clientX-startX) > MOVE_CANCEL_PX || Math.abs(ev.clientY-startY) > MOVE_CANCEL_PX){
+      cancelled = true;
+      clearTimeout(timer);
+      cleanup();
+    }
+  }
+  function onEarlyUp(){
+    cancelled = true;
+    clearTimeout(timer);
+    cleanup();
+  }
+  function cleanup(){
+    document.removeEventListener('pointermove', onEarlyMove);
+    document.removeEventListener('pointerup', onEarlyUp);
+  }
+  document.addEventListener('pointermove', onEarlyMove);
+  document.addEventListener('pointerup', onEarlyUp);
+}
+
+function beginDrag(card, pointerId, startX, startY){
+  if(navigator.vibrate) navigator.vibrate(12);
+  const rect = card.getBoundingClientRect();
+
+  const placeholder = document.createElement('div');
+  placeholder.className = 'drag-placeholder';
+  placeholder.style.height = rect.height + 'px';
+  card.after(placeholder);
+
+  const offsetY = startY - rect.top;
+  const offsetX = startX - rect.left;
+
+  card.classList.add('dragging');
+  card.style.width = rect.width + 'px';
+  card.style.left = rect.left + 'px';
+  card.style.top = rect.top + 'px';
+
+  try{ card.setPointerCapture(pointerId); }catch(err){}
+
+  function onMove(ev){
+    ev.preventDefault();
+    card.style.top = (ev.clientY - offsetY) + 'px';
+    card.style.left = (ev.clientX - offsetX) + 'px';
+
+    const siblings = [...habitListEl.querySelectorAll('.habit:not(.dragging)')];
+    let placed = false;
+    for(const sib of siblings){
+      const sr = sib.getBoundingClientRect();
+      const mid = sr.top + sr.height/2;
+      if(ev.clientY < mid){
+        if(sib.previousElementSibling !== placeholder) habitListEl.insertBefore(placeholder, sib);
+        placed = true;
+        break;
+      }
+    }
+    if(!placed && habitListEl.lastElementChild !== placeholder){
+      habitListEl.appendChild(placeholder);
+    }
+  }
+
+  function onUp(){
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    document.removeEventListener('pointercancel', onUp);
+
+    card.classList.remove('dragging');
+    card.style.position = '';
+    card.style.top = '';
+    card.style.left = '';
+    card.style.width = '';
+
+    habitListEl.insertBefore(card, placeholder);
+    placeholder.remove();
+
+    const newOrder = [...habitListEl.querySelectorAll('.habit[data-id]')].map(el=>el.dataset.id);
+    state.habits.sort((a,b)=> newOrder.indexOf(a.id) - newOrder.indexOf(b.id));
+    save();
+  }
+
+  document.addEventListener('pointermove', onMove, {passive:false});
+  document.addEventListener('pointerup', onUp);
+  document.addEventListener('pointercancel', onUp);
 }
 
 render();
