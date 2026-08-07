@@ -76,6 +76,7 @@
   }
   .habit:hover{border-color:var(--ember-glow);transform:translateY(-2px);}
   .habit.streaking{box-shadow:0 0 0 1px var(--ember-glow), 0 10px 28px -14px var(--ember-glow);}
+  .habit{touch-action:pan-y;-webkit-touch-callout:none;}
   .habit.dragging{position:fixed;z-index:200;box-shadow:0 24px 48px -12px rgba(0,0,0,.55);transform:scale(1.03) rotate(-1deg);transition:none;margin:0;}
   .drag-placeholder{border:2px dashed var(--border);border-radius:var(--radius);margin-bottom:12px;background:transparent;}
   .drag-handle{color:var(--sub);font-size:14px;cursor:grab;letter-spacing:-1px;opacity:.55;}
@@ -668,6 +669,7 @@ document.getElementById('reminder-time').value = settings.reminderTime;
 const habitListEl = document.getElementById('habit-list');
 const LONG_PRESS_MS = 420;
 const MOVE_CANCEL_PX = 8;
+function cancelThreshold(pointerType){ return pointerType==='touch' ? 16 : MOVE_CANCEL_PX; }
 
 habitListEl.addEventListener('pointerdown', onCardPointerDown);
 
@@ -678,14 +680,18 @@ function onCardPointerDown(e){
   if(e.pointerType==='mouse' && e.button!==0) return;
 
   const startX = e.clientX, startY = e.clientY;
+  const threshold = cancelThreshold(e.pointerType);
   let cancelled = false;
 
   const timer = setTimeout(()=>{
-    if(!cancelled) beginDrag(card, e.pointerId, startX, startY);
+    if(!cancelled){
+      cleanup();
+      beginDrag(card, e.pointerId, startX, startY);
+    }
   }, LONG_PRESS_MS);
 
   function onEarlyMove(ev){
-    if(Math.abs(ev.clientX-startX) > MOVE_CANCEL_PX || Math.abs(ev.clientY-startY) > MOVE_CANCEL_PX){
+    if(Math.abs(ev.clientX-startX) > threshold || Math.abs(ev.clientY-startY) > threshold){
       cancelled = true;
       clearTimeout(timer);
       cleanup();
@@ -720,6 +726,7 @@ function beginDrag(card, pointerId, startX, startY){
   card.style.width = rect.width + 'px';
   card.style.left = rect.left + 'px';
   card.style.top = rect.top + 'px';
+  card.style.touchAction = 'none';
 
   try{ card.setPointerCapture(pointerId); }catch(err){}
 
@@ -754,6 +761,7 @@ function beginDrag(card, pointerId, startX, startY){
     card.style.top = '';
     card.style.left = '';
     card.style.width = '';
+    card.style.touchAction = '';
 
     habitListEl.insertBefore(card, placeholder);
     placeholder.remove();
